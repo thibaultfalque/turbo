@@ -24,6 +24,7 @@
 #include "lala/cartesian_product.hpp"
 #include "lala/interval.hpp"
 #include "lala/pc.hpp"
+#include "lala/octagon.hpp"
 #include "lala/terms.hpp"
 #include "lala/fixpoint.hpp"
 #include "lala/search_tree.hpp"
@@ -155,9 +156,9 @@ struct AbstractDomains {
   using universe_type = typename Universe::local_type;
 
   /** Version of the abstract domains with a simple allocator, to represent the best solutions. */
-  using LIStore = VStore<universe_type, BasicAllocator>;
+  using LIStore = Octagon<universe_type, BasicAllocator>;
 
-  using IStore = VStore<Universe, StoreAllocator>;
+  using IStore = Octagon<Universe, StoreAllocator>;
   using IPC = PC<IStore, PropAllocator>; // Interval Propagators Completion
   using ISimplifier = Simplifier<IPC, BasicAllocator>;
   using Split = SplitStrategy<IPC, BasicAllocator>;
@@ -369,11 +370,13 @@ public:
   CUDA bool prepare_simplifier(F& f) {
     if(config.verbose_solving) {
       printf("%% Simplifying the formula...\n");
+      f.print(false);
     }
     IDiagnostics diagnostics;
     typename ISimplifier::template tell_type<basic_allocator_type> tell{basic_allocator};
     if(top_level_ginterpret_in<IKind::TELL>(*simplifier, f, env, tell, diagnostics)) {
       simplifier->tell(std::move(tell));
+      simplifier->deinterpret().print();
       return true;
     }
     else if(config.verbose_solving) {
@@ -456,6 +459,7 @@ public:
       fp_engine.fixpoint(*ipc);
       fp_engine.fixpoint(*simplifier);
       auto f = simplifier->deinterpret();
+      f.print(false);
       stats.eliminated_variables = simplifier->num_eliminated_variables();
       stats.eliminated_formulas = simplifier->num_eliminated_formulas();
       allocate(num_quantified_vars(f));
