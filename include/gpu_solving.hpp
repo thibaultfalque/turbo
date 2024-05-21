@@ -545,7 +545,7 @@ size_t gpu_sizeof() {
 template <class S, class U>
 size_t sizeof_store(const CP<U>& root) {
   return gpu_sizeof<typename S::BlockCP::IStore>()
-       + gpu_sizeof<typename S::BlockCP::IStore::universe_type>() * root.store->vars();
+       + gpu_sizeof<typename S::BlockCP::IStore::universe_type>() * root.store->vars() * root.store->vars() * root.store->vars() * 100;
 }
 
 void print_memory_statistics(const char* key, size_t bytes) {
