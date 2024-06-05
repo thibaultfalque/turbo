@@ -32,6 +32,7 @@
 #include "lala/interpretation.hpp"
 
 #include "lala/flatzinc_parser.hpp"
+#include "lala/output.hpp"
 
 #ifdef WITH_XCSP3PARSER
   #include "lala/XCSP3_parser.hpp"
@@ -189,7 +190,7 @@ struct AbstractDomains {
    : basic_allocator(basic_allocator)
    , prop_allocator(prop_allocator)
    , store_allocator(store_allocator)
-   , fzn_output(basic_allocator)
+   , output(basic_allocator)
    , config(other.config, basic_allocator)
    , stats(other.stats)
    , env(basic_allocator)
@@ -220,7 +221,7 @@ struct AbstractDomains {
     const tag_copy_cons& tag = tag_copy_cons{})
    : AbstractDomains(tag_gpu_block_copy{}, false, other, basic_allocator, prop_allocator, store_allocator)
   {
-    fzn_output = other.fzn_output;
+    output = other.output;
     env = other.env;
     simplifier = battery::allocate_shared<ISimplifier, BasicAllocator>(basic_allocator, *other.simplifier, typename ISimplifier::light_copy_tag{}, ipc, basic_allocator);
   }
@@ -242,7 +243,7 @@ struct AbstractDomains {
   , store_allocator(store_allocator)
   , config(config, basic_allocator)
   , env(basic_allocator)
-  , fzn_output(basic_allocator)
+  , output(basic_allocator, config.input_format()==InputFormat::FLATZINC? OutputType::FLATZINC : OutputType::XML)
   , store(store_allocator)
   , ipc(prop_allocator)
   , simplifier(basic_allocator)
@@ -251,6 +252,7 @@ struct AbstractDomains {
   , search_tree(basic_allocator)
   , best(basic_allocator)
   , bab(basic_allocator)
+  , stats(config.input_format()!=InputFormat::FLATZINC)
   {}
 
   AbstractDomains(AbstractDomains&& other) = default;
@@ -272,7 +274,7 @@ struct AbstractDomains {
   VarEnv<BasicAllocator> env;
 
   // Information about the output of the solutions expected by MiniZinc.
-  FlatZincOutput<BasicAllocator> fzn_output;
+  Output<BasicAllocator> output;
 
   Configuration<BasicAllocator> config;
   Statistics stats;
@@ -418,11 +420,11 @@ public:
     // I. Parse the FlatZinc model.
     FormulaPtr f;
     if(config.input_format() == InputFormat::FLATZINC) {
-      f = parse_flatzinc(config.problem_path.data(), fzn_output);
+      f = parse_flatzinc(config.problem_path.data(), output);
     }
 #ifdef WITH_XCSP3PARSER
     else if(config.input_format() == InputFormat::XCSP3) {
-      f = parse_xcsp3(config.problem_path.data(), fzn_output);
+      f = parse_xcsp3(config.problem_path.data(), output);
     }
 #endif
     if(!f) {
@@ -511,8 +513,9 @@ public:
   }
 
   CUDA void print_solution() {
-    fzn_output.print_solution(env, *best, *simplifier);
+    output.print_solution(env, *best, *simplifier);
     stats.print_mzn_separator();
+    
   }
 
   CUDA bool update_solution_stats() {
@@ -528,6 +531,9 @@ public:
 
   CUDA bool on_solution_node() {
     if(is_printing_intermediate_sol()) {
+      if(!bab->objective_var().is_untyped() && !best->is_bot()) {
+        stats.print_objective(best->project(bab->objective_var()), bab->is_minimization());
+      }
       print_solution();
     }
     return update_solution_stats();
@@ -541,7 +547,7 @@ public:
     if(!is_printing_intermediate_sol() && stats.solutions > 0) {
       print_solution();
     }
-    stats.print_mzn_final_separator();
+    stats.print_final();
   }
 
   CUDA void print_mzn_statistics() {
@@ -549,7 +555,7 @@ public:
       config.print_mzn_statistics();
       stats.print_mzn_statistics();
       if(!bab->objective_var().is_untyped() && !best->is_bot()) {
-        stats.print_mzn_objective(best->project(bab->objective_var()), bab->is_minimization());
+        stats.print_objective(best->project(bab->objective_var()), bab->is_minimization());
       }
       stats.print_mzn_end_stats();
     }

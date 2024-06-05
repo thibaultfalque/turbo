@@ -30,7 +30,9 @@ struct Statistics {
   double search_time;
   double propagation_time;
 
-  CUDA Statistics(size_t variables, size_t constraints, bool optimization):
+  bool xcsp;
+
+  CUDA Statistics(size_t variables, size_t constraints, bool optimization,bool xcsp=false):
     variables(variables), constraints(constraints), optimization(optimization),
     duration(0), interpretation_duration(0),
     nodes(0), fails(0), solutions(0),
@@ -38,10 +40,10 @@ struct Statistics {
     eps_solved_subproblems(0), eps_num_subproblems(1), eps_skipped_subproblems(0),
     num_blocks_done(0), fixpoint_iterations(0),
     eliminated_variables(0), eliminated_formulas(0),
-    search_time(0.0), propagation_time(0.0)
+    search_time(0.0), propagation_time(0.0), xcsp(xcsp)
     {}
 
-  CUDA Statistics(): Statistics(0,0,false) {}
+  CUDA Statistics(bool xcsp=false): Statistics(0,0,false,xcsp) {}
   Statistics(const Statistics&) = default;
   Statistics(Statistics&&) = default;
 
@@ -63,10 +65,12 @@ struct Statistics {
 
 private:
   CUDA void print_stat(const char* name, size_t value) const {
+    print_xcsp_comment();
     printf("%%%%%%mzn-stat: %s=%" PRIu64 "\n", name, value);
   }
 
   CUDA void print_stat(const char* name, double value) const {
+    print_xcsp_comment();
     printf("%%%%%%mzn-stat: %s=%lf\n", name, value);
   }
 
@@ -98,6 +102,7 @@ public:
   }
 
   CUDA void print_mzn_end_stats() const {
+    print_xcsp_comment();
     printf("%%%%%%mzn-stat-end\n");
   }
 
@@ -112,13 +117,43 @@ public:
     printf("\n");
   }
 
+  CUDA void print_xcsp_objective(const auto& obj, bool is_minimization) const {
+    printf("o ");
+    if(is_minimization) {
+      obj.lb().template deinterpret<lala::TFormula<battery::standard_allocator>>().print(false);
+    }
+    else {
+      obj.ub().template deinterpret<lala::TFormula<battery::standard_allocator>>().print(false);
+    }
+    printf("\n");
+  }
+
+  CUDA void print_objective(const auto& obj, bool is_minimization) const {
+    if(xcsp) {
+      print_xcsp_objective(obj, is_minimization);
+    }
+    else {
+      print_mzn_objective(obj, is_minimization);
+    }
+  }
+
   CUDA void print_mzn_separator() const {
+    if(xcsp){
+      return;
+    }
     printf("----------\n");
+  }
+
+  CUDA void print_xcsp_comment() const {
+    if (xcsp){
+      printf("c ");
+    }
   }
 
   CUDA void print_mzn_final_separator() const {
     if(solutions > 0) {
       if(exhaustive) {
+        print_xcsp_comment();
         printf("==========\n");
       }
     }
@@ -135,6 +170,24 @@ public:
       }
     }
   }
+  CUDA void print_final_xcsp() const {
+    if(solutions>0){
+      printf("s SATISFIABLE\n");
+    }else{
+      if(exhaustive){
+        printf("s UNSATISFIABLE\n");
+      }else{
+        printf("s UNKNOWN\n");
+      }
+    }
+  }
+  CUDA void print_final() const {
+    if(!xcsp){
+      print_mzn_final_separator();
+    }
+    print_final_xcsp();
+  }
+
 };
 
 #endif
